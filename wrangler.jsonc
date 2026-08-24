@@ -1,0 +1,10 @@
+{
+  // Cloudflare Workers static-assets config.
+  // Deploys the site in ./public as an assets-only Worker (no server code).
+  // Docs: https://developers.cloudflare.com/workers/static-assets/
+  "name": "larder",
+  "compatibility_date": "2025-01-01",
+  "assets": {
+    "directory": "./public"
+  }
+}
