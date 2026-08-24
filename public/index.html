@@ -1089,7 +1089,9 @@ function statCard(k, v, sub, tone) {
 
 /* Calorie bar chart with goal line */
 function calorieBars(days, goal) {
-  const W = 720, H = 240, padL = 42, padR = 12, padT = 14, padB = 26;
+  const mob = window.innerWidth <= 760;
+  const W = mob ? 384 : 720, H = mob ? 232 : 240, padL = 40, padR = 12, padT = 14, padB = 26;
+  const fA = mob ? 13 : 11, fX = mob ? 12 : 10.5;
   const vals = days.map(dayTotal);
   const maxV = Math.max(goal * 1.15, ...vals, 100);
   const niceMax = Math.ceil(maxV / 250) * 250;
@@ -1103,7 +1105,7 @@ function calorieBars(days, goal) {
     const gv = (niceMax / steps) * i;
     const gy = y(gv);
     grid.push(`<line x1="${padL}" y1="${gy}" x2="${W-padR}" y2="${gy}" stroke="var(--border)" stroke-width="1"/>`);
-    grid.push(`<text x="${padL-8}" y="${gy+4}" text-anchor="end" font-size="11" fill="var(--faint)">${gv>=1000?(gv/1000)+"k":gv}</text>`);
+    grid.push(`<text x="${padL-8}" y="${gy+4}" text-anchor="end" font-size="${fA}" fill="var(--faint)">${gv>=1000?(gv/1000)+"k":gv}</text>`);
   }
 
   const bars = days.map((d, i) => {
@@ -1122,7 +1124,7 @@ function calorieBars(days, goal) {
   const xlabels = days.map((d, i) => {
     if (i % labelEvery !== 0 && i !== days.length - 1) return "";
     const x = padL + i * bw + bw / 2;
-    return `<text x="${x.toFixed(1)}" y="${H-8}" text-anchor="middle" font-size="10.5" fill="var(--faint)">${shortDate(d)}</text>`;
+    return `<text x="${x.toFixed(1)}" y="${H-8}" text-anchor="middle" font-size="${fX}" fill="var(--faint)">${shortDate(d)}</text>`;
   }).join("");
 
   const gy = y(goal);
@@ -1146,6 +1148,7 @@ function trendChart(points, color, unit) {
     </div>`;
   }
   const W = 340, H = 190, padL = 40, padR = 14, padT = 14, padB = 24;
+  const fA = window.innerWidth <= 760 ? 12 : 11;
   const vals = points.map(p => p.value);
   let min = Math.min(...vals), max = Math.max(...vals);
   const span = (max - min) || 1;
@@ -1160,13 +1163,13 @@ function trendChart(points, color, unit) {
     const gv = min + ((max - min) / 3) * i;
     const gy = y(gv);
     grid.push(`<line x1="${padL}" y1="${gy}" x2="${W-padR}" y2="${gy}" stroke="var(--border)" stroke-width="1"/>`);
-    grid.push(`<text x="${padL-7}" y="${gy+4}" text-anchor="end" font-size="10.5" fill="var(--faint)">${round(gv,1)}</text>`);
+    grid.push(`<text x="${padL-7}" y="${gy+4}" text-anchor="end" font-size="${fA}" fill="var(--faint)">${round(gv,1)}</text>`);
   }
   const linePts = points.map((p, i) => `${x(i).toFixed(1)},${y(p.value).toFixed(1)}`).join(" ");
   const areaPts = `${padL},${padT+plotH} ${linePts} ${x(n-1).toFixed(1)},${padT+plotH}`;
   const dots = points.map((p, i) => `<circle cx="${x(i).toFixed(1)}" cy="${y(p.value).toFixed(1)}" r="${i===n-1?4:2.6}" fill="${color}" stroke="var(--surface)" stroke-width="1.5"><title>${niceDate(p.date)}: ${round(p.value,1)} ${unit}</title></circle>`).join("");
 
-  const xlabels = [0, n - 1].map(i => `<text x="${x(i).toFixed(1)}" y="${H-7}" text-anchor="${i===0?"start":"end"}" font-size="10.5" fill="var(--faint)">${shortDate(points[i].date)}</text>`).join("");
+  const xlabels = [0, n - 1].map(i => `<text x="${x(i).toFixed(1)}" y="${H-7}" text-anchor="${i===0?"start":"end"}" font-size="${fA}" fill="var(--faint)">${shortDate(points[i].date)}</text>`).join("");
 
   return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Trend chart">
     <defs><linearGradient id="grad-${color.replace(/[^a-z]/gi,'')}" x1="0" y1="0" x2="0" y2="1">
@@ -1291,7 +1294,9 @@ function intakeVsBody(days, goal) {
 
 /* Dual-axis chart: calorie bars (left, kcal) + a measurement line (right) */
 function overlayChart(days, points, unit) {
-  const W = 720, H = 240, padL = 44, padR = 46, padT = 16, padB = 26;
+  const mob = window.innerWidth <= 760;
+  const W = mob ? 384 : 560, H = mob ? 232 : 240, padL = 40, padR = 44, padT = 16, padB = 26;
+  const fA = mob ? 13 : 12, fX = mob ? 12 : 11;
   const cals = days.map(dayTotal);
   const hasCals = cals.some(v => v > 0);
   if (!hasCals && points.length === 0) return emptyChart("Not enough data in this range");
@@ -1314,13 +1319,13 @@ function overlayChart(days, points, unit) {
   for (let i = 0; i <= 4; i++) {
     const gv = (niceCal / 4) * i, gy = yL(gv);
     grid += `<line x1="${padL}" y1="${gy}" x2="${W-padR}" y2="${gy}" stroke="var(--border)" stroke-width="1"/>`;
-    grid += `<text x="${padL-7}" y="${gy+4}" text-anchor="end" font-size="10.5" fill="var(--faint)">${gv>=1000?(gv/1000)+"k":gv}</text>`;
+    grid += `<text x="${padL-7}" y="${gy+4}" text-anchor="end" font-size="${fA}" fill="var(--faint)">${gv>=1000?(gv/1000)+"k":gv}</text>`;
   }
   let rlabels = "";
   if (points.length) {
     for (let i = 0; i <= 2; i++) {
       const gv = vmin + ((vmax - vmin) / 2) * i, gy = yR(gv);
-      rlabels += `<text x="${W-padR+7}" y="${gy+4}" text-anchor="start" font-size="10.5" fill="var(--teal-ink)">${round(gv,1)}</text>`;
+      rlabels += `<text x="${W-padR+7}" y="${gy+4}" text-anchor="start" font-size="${fA}" fill="var(--teal-ink)">${round(gv,1)}</text>`;
     }
   }
   let bars = "";
@@ -1339,7 +1344,7 @@ function overlayChart(days, points, unit) {
   let xl = "";
   days.forEach((d, i) => {
     if (i % every !== 0 && i !== n - 1) return;
-    xl += `<text x="${xAt(i).toFixed(1)}" y="${H-8}" text-anchor="middle" font-size="10" fill="var(--faint)">${shortDate(d)}</text>`;
+    xl += `<text x="${xAt(i).toFixed(1)}" y="${H-8}" text-anchor="middle" font-size="${fX}" fill="var(--faint)">${shortDate(d)}</text>`;
   });
 
   return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Daily calories against ${unit} over time">${grid}${bars}${line}${dots}${rlabels}${xl}</svg>`;
@@ -2519,6 +2524,14 @@ async function syncNow() {
 applyTheme();
 render();
 initAuth();
+
+// Re-render charts at the right size only when crossing the mobile/desktop breakpoint
+// (width-based, so mobile scroll that toggles the URL bar — a height change — never triggers it)
+let lastMobileBP = window.innerWidth <= 760;
+window.addEventListener("resize", () => {
+  const m = window.innerWidth <= 760;
+  if (m !== lastMobileBP) { lastMobileBP = m; if (!modalRoot) render(); }
+});
 </script>
 </body>
 </html>
