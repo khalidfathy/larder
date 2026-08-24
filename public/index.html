@@ -1073,6 +1073,8 @@ function renderProgress() {
         ${topFoods(days)}
       </div>
     </section>
+
+    ${intakeVsBody(days, goal)}
   `;
 }
 
@@ -1239,6 +1241,186 @@ function topFoods(days) {
 
 function emptyChart(msg) {
   return `<div class="empty" style="padding:34px 12px"><div style="font-size:22px;margin-bottom:6px">📊</div><div>${msg}</div></div>`;
+}
+
+/* ---------------------------------------------- INTAKE vs BODY (comparison) */
+function intakeVsBody(days, goal) {
+  const wu = weightUnitLabel(state.settings.weightUnit), cu = state.settings.waistUnit;
+  const setDays = new Set(days);
+  const wPts = state.weights.filter(w => setDays.has(w.date)).sort((a,b)=>a.date<b.date?-1:1).map(w => ({ date: w.date, value: kgToNum(w.kg, state.settings.weightUnit) }));
+  const waPts = state.waists.filter(w => setDays.has(w.date)).sort((a,b)=>a.date<b.date?-1:1).map(w => ({ date: w.date, value: cmToNum(w.cm, state.settings.waistUnit) }));
+
+  const hasAny = days.some(d => dayTotal(d) > 0) || wPts.length || waPts.length;
+  if (!hasAny) {
+    return `<section>
+      <div class="section-head"><h2>Intake vs. your body</h2><span class="eyebrow">last ${days.length} days</span></div>
+      <div class="card chart-card">${emptyChart("Log some food and a weight or waist measurement to compare them")}</div>
+    </section>`;
+  }
+
+  const legendBar = `<span style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;color:var(--muted)"><span style="width:12px;height:12px;border-radius:3px;background:var(--accent);opacity:.5"></span>Daily calories</span>`;
+  const legendLine = (txt) => `<span style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;color:var(--muted)"><span style="width:15px;height:3px;border-radius:2px;background:var(--teal)"></span>${txt}</span>`;
+
+  const weekly = buildWeekly(days);
+  const showWeekly = weekly.some(w => w.avgKcal != null || w.wDelta != null || w.waDelta != null);
+  const insight = intakeInsight(days, goal, wPts, waPts, wu, cu);
+
+  return `
+    <section>
+      <div class="section-head"><h2>Intake vs. your body</h2><span class="eyebrow">last ${days.length} days</span></div>
+      ${insight ? `<div class="card" style="padding:15px 17px;margin-bottom:16px"><p style="margin:0;color:var(--muted);line-height:1.55">${insight}</p></div>` : ""}
+      <div class="two-col">
+        <div class="card chart-card">
+          <h3>Calories vs weight</h3>
+          <div style="display:flex;gap:16px;flex-wrap:wrap;margin:4px 0 12px">${legendBar}${legendLine("Weight (" + wu + ")")}</div>
+          ${overlayChart(days, wPts, wu)}
+        </div>
+        <div class="card chart-card">
+          <h3>Calories vs waist</h3>
+          <div style="display:flex;gap:16px;flex-wrap:wrap;margin:4px 0 12px">${legendBar}${legendLine("Waist (" + cu + ")")}</div>
+          ${overlayChart(days, waPts, cu)}
+        </div>
+      </div>
+      ${showWeekly ? `<div class="card chart-card" style="margin-top:16px">
+        <h3>Week by week</h3>
+        <div class="cap">Average intake against how your measurements moved that week</div>
+        <div class="table-wrap">${weeklyTable(weekly, wu, cu)}</div>
+      </div>` : ""}
+    </section>`;
+}
+
+/* Dual-axis chart: calorie bars (left, kcal) + a measurement line (right) */
+function overlayChart(days, points, unit) {
+  const W = 720, H = 240, padL = 44, padR = 46, padT = 16, padB = 26;
+  const cals = days.map(dayTotal);
+  const hasCals = cals.some(v => v > 0);
+  if (!hasCals && points.length === 0) return emptyChart("Not enough data in this range");
+  const plotW = W - padL - padR, plotH = H - padT - padB, n = days.length, bw = plotW / n;
+
+  const calMax = Math.max(100, ...cals);
+  const niceCal = Math.ceil(calMax / 250) * 250 || 250;
+  const yL = v => padT + plotH - (v / niceCal) * plotH;
+
+  let vmin = 0, vmax = 1;
+  if (points.length) {
+    const vals = points.map(p => p.value);
+    vmin = Math.min(...vals); vmax = Math.max(...vals);
+    const span = (vmax - vmin) || 1; vmin -= span * 0.25; vmax += span * 0.25;
+  }
+  const yR = v => padT + plotH - ((v - vmin) / (vmax - vmin)) * plotH;
+  const xAt = i => padL + i * bw + bw / 2;
+
+  let grid = "";
+  for (let i = 0; i <= 4; i++) {
+    const gv = (niceCal / 4) * i, gy = yL(gv);
+    grid += `<line x1="${padL}" y1="${gy}" x2="${W-padR}" y2="${gy}" stroke="var(--border)" stroke-width="1"/>`;
+    grid += `<text x="${padL-7}" y="${gy+4}" text-anchor="end" font-size="10.5" fill="var(--faint)">${gv>=1000?(gv/1000)+"k":gv}</text>`;
+  }
+  let rlabels = "";
+  if (points.length) {
+    for (let i = 0; i <= 2; i++) {
+      const gv = vmin + ((vmax - vmin) / 2) * i, gy = yR(gv);
+      rlabels += `<text x="${W-padR+7}" y="${gy+4}" text-anchor="start" font-size="10.5" fill="var(--teal-ink)">${round(gv,1)}</text>`;
+    }
+  }
+  let bars = "";
+  days.forEach((d, i) => {
+    const v = cals[i]; if (v <= 0) return;
+    const x = padL + i * bw + bw * 0.2, w = bw * 0.6, yy = yL(v), h = padT + plotH - yy;
+    bars += `<rect x="${x.toFixed(1)}" y="${yy.toFixed(1)}" width="${w.toFixed(1)}" height="${Math.max(1,h).toFixed(1)}" rx="2.5" fill="var(--accent)" opacity="0.3"><title>${niceDate(d)}: ${fmt(v)} kcal</title></rect>`;
+  });
+  let line = "", dots = "";
+  if (points.length) {
+    const coords = points.map(p => `${xAt(days.indexOf(p.date)).toFixed(1)},${yR(p.value).toFixed(1)}`);
+    if (points.length > 1) line = `<polyline points="${coords.join(" ")}" fill="none" stroke="var(--teal)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>`;
+    dots = points.map(p => `<circle cx="${xAt(days.indexOf(p.date)).toFixed(1)}" cy="${yR(p.value).toFixed(1)}" r="3.2" fill="var(--teal)" stroke="var(--surface)" stroke-width="1.5"><title>${niceDate(p.date)}: ${round(p.value,1)} ${unit}</title></circle>`).join("");
+  }
+  const every = n <= 10 ? 2 : n <= 32 ? 6 : 14;
+  let xl = "";
+  days.forEach((d, i) => {
+    if (i % every !== 0 && i !== n - 1) return;
+    xl += `<text x="${xAt(i).toFixed(1)}" y="${H-8}" text-anchor="middle" font-size="10" fill="var(--faint)">${shortDate(d)}</text>`;
+  });
+
+  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Daily calories against ${unit} over time">${grid}${bars}${line}${dots}${rlabels}${xl}</svg>`;
+}
+
+/* Latest measurement value on/before (or strictly before) a date */
+function measureAsOf(arr, dateKey, field, inclusive) {
+  let best = null;
+  for (const m of arr) {
+    const ok = inclusive ? m.date <= dateKey : m.date < dateKey;
+    if (ok && (!best || m.date > best.date)) best = m;
+  }
+  return best ? best[field] : null;
+}
+
+/* Bucket the range into weeks (most recent first) with avg intake + measurement deltas */
+function buildWeekly(days) {
+  const chron = days.slice();
+  const weeks = [];
+  for (let end = chron.length; end > 0; end -= 7) weeks.push(chron.slice(Math.max(0, end - 7), end));
+  return weeks.map((bucket, i) => {
+    const weekStart = bucket[0], weekEnd = bucket[bucket.length - 1];
+    const logged = bucket.filter(d => entriesFor(d).length > 0);
+    const avgKcal = logged.length ? Math.round(logged.reduce((s, d) => s + dayTotal(d), 0) / logged.length) : null;
+    const wEnd = measureAsOf(state.weights, weekEnd, "kg", true), wRef = measureAsOf(state.weights, weekStart, "kg", false);
+    const waEnd = measureAsOf(state.waists, weekEnd, "cm", true), waRef = measureAsOf(state.waists, weekStart, "cm", false);
+    return {
+      weekStart, weekEnd, isRecent: i === 0, avgKcal,
+      wDelta: (wEnd != null && wRef != null) ? kgToNum(wEnd - wRef, state.settings.weightUnit) : null,
+      waDelta: (waEnd != null && waRef != null) ? cmToNum(waEnd - waRef, state.settings.waistUnit) : null,
+    };
+  });
+}
+
+function weekLabel(startK, endK, isRecent) {
+  if (isRecent) return "This week";
+  const s = fromKey(startK), e = fromKey(endK);
+  const sM = MON[s.getMonth()], eM = MON[e.getMonth()];
+  return sM === eM ? `${s.getDate()}–${e.getDate()} ${eM}` : `${s.getDate()} ${sM} – ${e.getDate()} ${eM}`;
+}
+function deltaCell(v, unit) {
+  if (v == null) return `<td class="num"><span class="hint">—</span></td>`;
+  const r = round(v, 1);
+  const col = r < 0 ? "--good-ink" : r > 0 ? "--over-ink" : "--faint";
+  const disp = (r > 0 ? "+" : r < 0 ? "−" : "") + Math.abs(r);
+  return `<td class="num tnum" style="color:var(${col});font-weight:600">${disp} ${unit}</td>`;
+}
+function weeklyTable(weeks, wu, cu) {
+  const rows = weeks.map(w => `<tr>
+    <td class="food-name">${weekLabel(w.weekStart, w.weekEnd, w.isRecent)}</td>
+    <td class="num tnum">${w.avgKcal != null ? fmt(w.avgKcal) : '<span class="hint">—</span>'}</td>
+    ${deltaCell(w.wDelta, wu)}
+    ${deltaCell(w.waDelta, cu)}
+  </tr>`).join("");
+  return `<table><thead><tr><th>Week</th><th class="num">Avg kcal/day</th><th class="num">Weight</th><th class="num">Waist</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+/* Plain-language summary tying intake to body change */
+function intakeInsight(days, goal, wPts, waPts, wu, cu) {
+  const logged = days.filter(d => entriesFor(d).length > 0);
+  const avgCal = logged.length ? Math.round(logged.reduce((s, d) => s + dayTotal(d), 0) / logged.length) : null;
+  const wNet = wPts.length >= 2 ? wPts[wPts.length - 1].value - wPts[0].value : null;
+  const waNet = waPts.length >= 2 ? waPts[waPts.length - 1].value - waPts[0].value : null;
+  if (avgCal == null && wNet == null && waNet == null) return "";
+  const nDays = days.length;
+  const arrow = v => v < 0 ? "fell" : v > 0 ? "rose" : "held steady";
+
+  let s = "";
+  if (avgCal != null) {
+    const diff = avgCal - goal;
+    const rel = diff <= 0 ? `<b>${fmt(-diff)} under</b>` : `<b>${fmt(diff)} over</b>`;
+    s = `Over the last ${nDays} days you averaged <b>${fmt(avgCal)} kcal/day</b> — ${rel} your ${fmt(goal)} kcal goal.`;
+  }
+  const bits = [];
+  if (wNet != null) bits.push(`weight ${arrow(wNet)}${wNet ? " <b>" + Math.abs(round(wNet,1)) + " " + wu + "</b>" : ""}`);
+  if (waNet != null) bits.push(`waist ${arrow(waNet)}${waNet ? " <b>" + Math.abs(round(waNet,1)) + " " + cu + "</b>" : ""}`);
+  if (bits.length) {
+    const joined = bits.length === 2 ? bits[0] + " and " + bits[1] : bits[0];
+    s += (s ? ` In that time your ` : `Over the last ${nDays} days your `) + joined + ".";
+  }
+  return s;
 }
 
 /* ---------------------------------------------------------------- FOODS */
