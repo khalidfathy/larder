@@ -1749,9 +1749,15 @@ function openSettings() {
             <div style="font-weight:600">Your data</div>
             <span class="hint">${state.log.length} entries · ${daysLogged} days · ${state.weights.length} weigh-ins</span>
           </div>
-          <div class="hint" style="margin-bottom:12px;">Everything is stored privately in this browser only. Export a backup, or move it to another device.</div>
+          <div class="hint" style="margin-bottom:10px;">Stored privately in this browser. Export your history to a spreadsheet for deeper analysis, or a full JSON backup to restore later.</div>
+          <div style="font-size:12px;font-weight:600;color:var(--muted);margin-bottom:6px;">Export for analysis (CSV)</div>
+          <div class="input-row" style="flex-wrap:wrap;margin-bottom:10px;">
+            <button class="btn" data-action="export-daily-csv">Daily summary</button>
+            <button class="btn" data-action="export-log-csv">Food log</button>
+          </div>
+          <div style="font-size:12px;font-weight:600;color:var(--muted);margin-bottom:6px;">Backup &amp; restore</div>
           <div class="input-row" style="flex-wrap:wrap">
-            <button class="btn" data-action="export">Export backup</button>
+            <button class="btn" data-action="export">Backup (JSON)</button>
             <button class="btn" data-action="import">Import backup</button>
             <button class="btn" data-action="clear" style="color:var(--over-ink);border-color:var(--over-soft)">Clear all data</button>
           </div>
@@ -2135,6 +2141,8 @@ document.addEventListener("click", (ev) => {
     // settings
     case "save-settings": saveSettings(); break;
     case "export": exportData(); break;
+    case "export-log-csv": exportFoodLogCsv(); break;
+    case "export-daily-csv": exportDailyCsv(); break;
     case "import": importData(); break;
     case "clear": clearData(); break;
 
@@ -2279,30 +2287,89 @@ function saveSettings() {
   toast("Settings saved");
 }
 
-async function exportData() {
-  const json = JSON.stringify(state, null, 2);
-  const filename = `larder-backup-${todayKey()}.json`;
-
-  // Hosted-artifact path: use the downloads capability (sandbox blocks direct downloads)
+/* Save a generated file. Uses the downloads capability on a hosted artifact,
+   otherwise a normal blob download (works on Cloudflare / local file). */
+async function saveFile(filename, data, mime) {
   let downloads = null;
   try { downloads = (window.claude && window.claude.use) ? await window.claude.use("downloads") : null; }
   catch (e) { downloads = null; }
   if (downloads) {
-    try { await downloads.save({ filename, data: json }); toast("Backup saved"); }
-    catch (err) { if (!(err && err.code === "declined")) toast("Couldn't save backup"); }
-    return;
+    try { await downloads.save({ filename, data }); toast("Saved " + filename); return; }
+    catch (err) { if (err && err.code === "declined") return; /* else fall through to blob */ }
   }
-
-  // Standalone/local file path: direct blob download
   try {
-    const blob = new Blob([json], { type: "application/json" });
+    const blob = new Blob([data], { type: mime || "text/plain;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url; a.download = filename;
     document.body.appendChild(a); a.click(); a.remove();
     URL.revokeObjectURL(url);
-    toast("Backup downloaded");
+    toast("Downloaded " + filename);
   } catch (e) { toast("Export isn't supported here"); }
+}
+
+function exportData() {
+  saveFile(`larder-backup-${todayKey()}.json`, JSON.stringify(state, null, 2), "application/json");
+}
+
+/* ---- CSV export for deeper analysis ---- */
+function csvCell(v) {
+  if (v == null) v = "";
+  v = String(v);
+  return /[",\n\r]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
+}
+function toCsv(headers, rows) {
+  const lines = [headers.map(csvCell).join(",")];
+  rows.forEach(r => lines.push(r.map(csvCell).join(",")));
+  return "﻿" + lines.join("\r\n") + "\r\n"; // BOM so Excel reads UTF-8
+}
+
+/* One row per logged food item (long format) */
+function exportFoodLogCsv() {
+  if (!state.log.length) { toast("No food logged yet"); return; }
+  const order = { breakfast: 0, lunch: 1, dinner: 2, snacks: 3 };
+  const rows = state.log.slice()
+    .sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : (order[a.meal] || 0) - (order[b.meal] || 0))
+    .map(e => [
+      e.date,
+      DOW[fromKey(e.date).getDay()],
+      (MEALS.find(m => m.id === e.meal) || {}).name || e.meal,
+      e.name,
+      e.detail || "",
+      e.grams != null ? e.grams : "",
+      e.kcal
+    ]);
+  const csv = toCsv(["Date", "Day", "Meal", "Food", "Amount", "Grams", "Calories (kcal)"], rows);
+  saveFile(`larder-food-log-${todayKey()}.csv`, csv, "text/csv;charset=utf-8");
+}
+
+/* One row per day (wide format): calories by meal + measurements — best for analysis */
+function exportDailyCsv() {
+  const dates = new Set();
+  state.log.forEach(e => dates.add(e.date));
+  state.weights.forEach(w => dates.add(w.date));
+  state.waists.forEach(w => dates.add(w.date));
+  if (!dates.size) { toast("No data to export yet"); return; }
+  const wu = weightUnitLabel(state.settings.weightUnit), cu = state.settings.waistUnit;
+  const rows = [...dates].sort().map(d => {
+    const entries = entriesFor(d);
+    const byMeal = { breakfast: 0, lunch: 0, dinner: 0, snacks: 0 };
+    entries.forEach(e => { byMeal[e.meal] = (byMeal[e.meal] || 0) + e.kcal; });
+    const total = entries.reduce((s, e) => s + e.kcal, 0);
+    const w = state.weights.find(x => x.date === d);
+    const wa = state.waists.find(x => x.date === d);
+    return [
+      d, DOW[fromKey(d).getDay()],
+      total, byMeal.breakfast, byMeal.lunch, byMeal.dinner, byMeal.snacks,
+      state.settings.goal, entries.length ? total - state.settings.goal : "",
+      entries.length,
+      w ? round(w.kg, 2) : "", w ? round(kgToNum(w.kg, state.settings.weightUnit), 1) : "",
+      wa ? round(wa.cm, 1) : "", wa ? round(cmToNum(wa.cm, state.settings.waistUnit), 1) : ""
+    ];
+  });
+  const headers = ["Date", "Day", "Total kcal", "Breakfast kcal", "Lunch kcal", "Dinner kcal", "Snacks kcal",
+    "Goal kcal", "Over/under kcal", "Items logged", "Weight (kg)", `Weight (${wu})`, "Waist (cm)", `Waist (${cu})`];
+  saveFile(`larder-daily-summary-${todayKey()}.csv`, toCsv(headers, rows), "text/csv;charset=utf-8");
 }
 function importData() {
   const input = document.createElement("input");
