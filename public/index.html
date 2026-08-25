@@ -2351,6 +2351,8 @@ function exportDailyCsv() {
   state.waists.forEach(w => dates.add(w.date));
   if (!dates.size) { toast("No data to export yet"); return; }
   const wu = weightUnitLabel(state.settings.weightUnit), cu = state.settings.waistUnit;
+  const showW = state.settings.weightUnit !== "kg";   // extra column only if display unit differs from metric
+  const showWa = state.settings.waistUnit !== "cm";
   const rows = [...dates].sort().map(d => {
     const entries = entriesFor(d);
     const byMeal = { breakfast: 0, lunch: 0, dinner: 0, snacks: 0 };
@@ -2358,17 +2360,23 @@ function exportDailyCsv() {
     const total = entries.reduce((s, e) => s + e.kcal, 0);
     const w = state.weights.find(x => x.date === d);
     const wa = state.waists.find(x => x.date === d);
-    return [
+    const row = [
       d, DOW[fromKey(d).getDay()],
       total, byMeal.breakfast, byMeal.lunch, byMeal.dinner, byMeal.snacks,
       state.settings.goal, entries.length ? total - state.settings.goal : "",
       entries.length,
-      w ? round(w.kg, 2) : "", w ? round(kgToNum(w.kg, state.settings.weightUnit), 1) : "",
-      wa ? round(wa.cm, 1) : "", wa ? round(cmToNum(wa.cm, state.settings.waistUnit), 1) : ""
+      w ? round(w.kg, 2) : ""
     ];
+    if (showW) row.push(w ? round(kgToNum(w.kg, state.settings.weightUnit), 1) : "");
+    row.push(wa ? round(wa.cm, 1) : "");
+    if (showWa) row.push(wa ? round(cmToNum(wa.cm, state.settings.waistUnit), 1) : "");
+    return row;
   });
   const headers = ["Date", "Day", "Total kcal", "Breakfast kcal", "Lunch kcal", "Dinner kcal", "Snacks kcal",
-    "Goal kcal", "Over/under kcal", "Items logged", "Weight (kg)", `Weight (${wu})`, "Waist (cm)", `Waist (${cu})`];
+    "Goal kcal", "Over/under kcal", "Items logged", "Weight (kg)"];
+  if (showW) headers.push(`Weight (${wu})`);
+  headers.push("Waist (cm)");
+  if (showWa) headers.push(`Waist (${cu})`);
   saveFile(`larder-daily-summary-${todayKey()}.csv`, toCsv(headers, rows), "text/csv;charset=utf-8");
 }
 function importData() {
