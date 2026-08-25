@@ -5,17 +5,11 @@
   Referrer-Policy: strict-origin-when-cross-origin
   X-Frame-Options: SAMEORIGIN
   Permissions-Policy: geolocation=(), camera=(), microphone=(), payment=(), usb=()
-  Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' https://*.supabase.co wss://*.supabase.co; manifest-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
 
-# Always revalidate the app shell + config so new deploys show immediately
+# Always revalidate the app shell so new deploys show immediately
 /index.html
   Cache-Control: public, max-age=0, must-revalidate
-
-/config.js
-  Cache-Control: public, max-age=0, must-revalidate
-
-/vendor/*
-  Cache-Control: public, max-age=604800
 
 /manifest.webmanifest
   Cache-Control: public, max-age=86400

@@ -1,10 +1,14 @@
 {
-  // Cloudflare Workers static-assets config.
-  // Deploys the site in ./public as an assets-only Worker (no server code).
+  // Cloudflare Worker: serves the static site in ./public and a small sync API.
   // Docs: https://developers.cloudflare.com/workers/static-assets/
   "name": "larder",
   "compatibility_date": "2025-01-01",
+  "main": "worker/index.js",
   "assets": {
-    "directory": "./public"
-  }
+    "directory": "./public",
+    "binding": "ASSETS"
+  },
+  "kv_namespaces": [
+    { "binding": "SYNC_KV", "id": "538aa4cfdd934f93bb9d2be0cff4b25b" }
+  ]
 }
